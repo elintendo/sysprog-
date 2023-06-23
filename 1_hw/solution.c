@@ -5,8 +5,6 @@
 
 #include "libcoro.h"
 
-#define FILE_SIZE 10000
-
 void merge(int arr[], int l, int m, int r) {
   int i, j, k;
   int n1 = m - l + 1;
@@ -71,8 +69,25 @@ void mergeArrays(int arr1[], int arr2[], int n1, int n2, int arr3[]) {
   while (j < n2) arr3[k++] = arr2[j++];
 }
 
+int countFileSize(char *fileName) {
+  int temp;
+  int count = 0;
+  FILE *file = fopen(fileName, "r");
+  if (file == NULL) {
+    printf("Could not open specified file");
+    return -1;
+  }
+
+  while (fscanf(file, "%d", &temp) == 1) {
+    count++;
+  }
+  fclose(file);
+  return count;
+}
+
 typedef struct func_arg {
   int *arrToSort;
+  int arrSize;
   char *fileToSort;
   struct timespec *start;
 } Func_arg;
@@ -82,12 +97,16 @@ static int coroutine_func_f(void *context) {
   struct func_arg *fa = (struct func_arg *)context;
   FILE *fp = fopen(fa->fileToSort, "r");
 
-  for (int i = 0; i < FILE_SIZE; i++) {
+  for (int i = 0; i < fa->arrSize; i++) {
     fscanf(fp, "%d ", &(fa->arrToSort)[i]);
   }
 
-  mergeSort(fa->arrToSort, 0, FILE_SIZE - 1);
+  mergeSort(fa->arrToSort, 0, fa->arrSize - 1);
 
+  // printf("%s", fa->fileToSort);
+  // for (int i = 0; i < 20; i++) {
+  //   printf("%d ", fa->arrToSort[i]);
+  // }
   fclose(fp);
   return 0;
 }
@@ -112,25 +131,29 @@ int main(int argc, char **argv) {
   int **arrs = (int **)calloc((argc - 2), sizeof(int *));
   struct func_arg *fa = malloc((argc - 2) * sizeof(struct func_arg));
 
+  int *sizes = malloc((argc - 2) * sizeof(int));
+
   for (int i = 0; i < argc - 2; ++i) {
-    *(arrs + i) = (int *)calloc(FILE_SIZE, sizeof(int));
-    fa[i] = (Func_arg){*(arrs + i), argv[i + 2], &start};
+    sizes[i] = countFileSize(argv[i + 2]);
+    *(arrs + i) = (int *)calloc(sizes[i], sizeof(int));
+    fa[i] = (Func_arg){*(arrs + i), sizes[i], argv[i + 2], &start};
     coro_new(coroutine_func_f, &(fa[i]));
   }
 
   struct coro *c;
   while ((c = coro_sched_wait()) != NULL) {
     printf("Finished %d\n", coro_status(c));
+    // print time here
     coro_delete(c);
   }
 
   for (int i = 0; i < argc - 2 - 1; ++i) {
-    int *ans = malloc(FILE_SIZE * (i + 2) * sizeof(int));
-    mergeArrays(*(arrs + i), *(arrs + i + 1), FILE_SIZE * (i + 1), FILE_SIZE,
-                ans);
+    int *ans = malloc((sizes[i] + sizes[i + 1]) * sizeof(int));
+    mergeArrays(*(arrs + i), *(arrs + i + 1), sizes[i], sizes[i + 1], ans);
     free(*(arrs + i));
     free(*(arrs + i + 1));
     *(arrs + i + 1) = ans;
+    sizes[i + 1] += sizes[i];
   }
 
   FILE *file = fopen("output.txt", "w");
@@ -139,7 +162,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  for (int i = 0; i < FILE_SIZE * (argc - 2); i++) {
+  for (int i = 0; i < sizes[argc - 2 - 1]; i++) {
     fprintf(file, "%d\n", arrs[argc - 2 - 1][i]);
   }
 
@@ -148,6 +171,7 @@ int main(int argc, char **argv) {
   free(arrs[argc - 2 - 1]);
   free(arrs);
   free(fa);
+  free(sizes);
 
   clock_gettime(CLOCK_MONOTONIC, &end);
   elapsed_sec = end.tv_sec - start.tv_sec;
