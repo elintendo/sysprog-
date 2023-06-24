@@ -1,9 +1,16 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include "libcoro.h"
+
+uint64_t getTime(void) {
+  struct timespec spec;
+  clock_gettime(CLOCK_MONOTONIC, &spec);
+  return spec.tv_sec * 1000000000 + spec.tv_nsec;
+}
 
 void merge(int arr[], int l, int m, int r) {
   int i, j, k;
@@ -42,16 +49,22 @@ void merge(int arr[], int l, int m, int r) {
   }
 }
 
-void mergeSort(int arr[], int l, int r) {
+uint64_t mergeSort(int arr[], int l, int r) {
   if (l < r) {
     int m = l + (r - l) / 2;
 
     mergeSort(arr, l, m);
+
+    uint64_t ts1 = getTime();
     coro_yield();
+    uint64_t ts2 = getTime();
+
     mergeSort(arr, m + 1, r);
 
     merge(arr, l, m, r);
+    return ts2 - ts1;
   }
+  return 0;
 }
 
 void mergeArrays(int arr1[], int arr2[], int n1, int n2, int arr3[]) {
@@ -89,11 +102,11 @@ typedef struct func_arg {
   int *arrToSort;
   int arrSize;
   char *fileToSort;
-  struct timespec *start;
 } Func_arg;
 
 static int coroutine_func_f(void *context) {
-  //   struct coro *this = coro_this();
+  uint64_t ts1 = getTime();
+
   struct func_arg *fa = (struct func_arg *)context;
   FILE *fp = fopen(fa->fileToSort, "r");
 
@@ -101,20 +114,18 @@ static int coroutine_func_f(void *context) {
     fscanf(fp, "%d ", &(fa->arrToSort)[i]);
   }
 
-  mergeSort(fa->arrToSort, 0, fa->arrSize - 1);
+  uint64_t lostTime = mergeSort(fa->arrToSort, 0, fa->arrSize - 1);
 
-  // printf("%s", fa->fileToSort);
-  // for (int i = 0; i < 20; i++) {
-  //   printf("%d ", fa->arrToSort[i]);
-  // }
+  uint64_t totalTime = getTime() - ts1 - lostTime;
+
+  printf("Courutine that sorted %s has been working for %ld ms\n",
+         fa->fileToSort, totalTime / 1000000);
   fclose(fp);
   return 0;
 }
 
 int main(int argc, char **argv) {
-  struct timespec start, end;
-  long long elapsed_sec, elapsed_nsec;
-  clock_gettime(CLOCK_MONOTONIC, &start);
+  uint64_t ts1 = getTime();
 
   if (argc <= 1) {
     printf("No files to sort.\n");
@@ -136,14 +147,13 @@ int main(int argc, char **argv) {
   for (int i = 0; i < argc - 2; ++i) {
     sizes[i] = countFileSize(argv[i + 2]);
     *(arrs + i) = (int *)calloc(sizes[i], sizeof(int));
-    fa[i] = (Func_arg){*(arrs + i), sizes[i], argv[i + 2], &start};
+    fa[i] = (Func_arg){*(arrs + i), sizes[i], argv[i + 2]};
     coro_new(coroutine_func_f, &(fa[i]));
   }
 
   struct coro *c;
   while ((c = coro_sched_wait()) != NULL) {
-    printf("Finished %d\n", coro_status(c));
-    // print time here
+    // printf("Finished %d\n", coro_status(c));
     coro_delete(c);
   }
 
@@ -173,15 +183,8 @@ int main(int argc, char **argv) {
   free(fa);
   free(sizes);
 
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  elapsed_sec = end.tv_sec - start.tv_sec;
-  elapsed_nsec = end.tv_nsec - start.tv_nsec;
-  if (elapsed_nsec < 0) {
-    elapsed_sec--;
-    elapsed_nsec += 1000000000;
-  }
-  printf("Total elapsed time: %lld seconds %lld milliseconds\n", elapsed_sec,
-         elapsed_nsec / 1000000);
+  uint64_t ts2 = getTime();
+  printf("Total elapsed time: %ld ms\n", (ts2 - ts1) / 1000000);
 
   return 0;
 }
