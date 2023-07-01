@@ -1,8 +1,10 @@
 #include <assert.h>
 #include <ctype.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -134,26 +136,50 @@ int main(void) {
 
     //
 
-    int n = 0;
-    char **cmd = malloc((line.cmds[n]->argc + 2) * sizeof(char *));
-    cmd[0] = line.cmds[n]->name;
-    for (int i = 1; i < line.cmds[n]->argc + 1; i++) {
-      cmd[i] = line.cmds[n]->argv[i];
-    }
-    cmd[line.cmds[n]->argc + 1] = (char *)0;
+    for (int n = 0; n < line.count; n++) {
+      char **cmd = malloc((line.cmds[n]->argc + 2) * sizeof(char *));
+      cmd[0] = line.cmds[n]->name;
+      for (int i = 1; i < line.cmds[n]->argc + 1; i++) {
+        cmd[i] = line.cmds[n]->argv[i - 1];
+      }
+      cmd[line.cmds[n]->argc + 1] = (char *)0;
+      // printf("{%s}\n", cmd[0]);
+      char *secondLast = line.cmds[n]->argv[line.cmds[n]->argc - 2];
 
-    pid_t child_pid = fork();
-    if (child_pid == 0) {
       if (!strcmp(line.cmds[n]->name, "cd")) {
         cd_command(&line);
+        free(cmd);
       } else if (!strcmp(line.cmds[n]->name, "exit")) {
+      } else if ((line.cmds[n]->argc >= 2) &&
+                 (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
+        pid_t child_pid = fork();
+        if (child_pid == 0) {
+          char *file_name = line.cmds[n]->argv[line.cmds[n]->argc - 1];
+          int file;
+
+          if (!strcmp(secondLast, ">"))
+            file = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+          else
+            file = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0777);
+
+          dup2(file, STDOUT_FILENO);
+          close(file);
+          cmd[line.cmds[n]->argc] = (char *)0;
+          cmd[line.cmds[n]->argc - 1] = (char *)0;
+          execvp(line.cmds[n]->name, cmd);
+        }
+        free(cmd);
       } else {
-        execvp(line.cmds[n]->name, cmd);
+        // printf("{%s}\n", cmd[0]);
+        pid_t child_pid = fork();
+        if (child_pid == 0) {
+          execvp(line.cmds[n]->name, cmd);
+        }
+        free(cmd);
+        waitpid(child_pid, NULL, 0);
       }
+      //
     }
-    free(cmd);
-    waitpid(child_pid, NULL, 0);
-    //
 
     for (int k = 0; k < line.count; k++) {
       free(line.cmds[k]->name);
