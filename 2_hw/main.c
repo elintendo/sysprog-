@@ -9,6 +9,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define ANSI_COLOR_RED "\x1b[31m"
+#define ANSI_COLOR_GREEN "\x1b[32m"
+#define ANSI_COLOR_YELLOW "\x1b[33m"
+#define ANSI_COLOR_BLUE "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN "\x1b[36m"
+#define ANSI_COLOR_RESET "\x1b[0m"
+
 struct cmd {
   char *name;
   int argc;
@@ -19,6 +27,25 @@ struct cmd_line {
   struct cmd **cmds;
   int count;
 };
+
+void greeting() {
+  // "orsh-0.1$ "
+  printf(ANSI_COLOR_RED "o" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_GREEN "r" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_YELLOW "s" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_BLUE "h" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_MAGENTA "-" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_CYAN "0" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_RED "." ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_GREEN "1" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_YELLOW "$ " ANSI_COLOR_RESET);
+}
+
+// void red() { printf("\033[1;31m"); }
+
+// void yellow() { printf("\033[1;33m"); }
+
+// void reset() { printf("\033[0m"); }
 
 char *string_trim_inplace(char *s) {
   char *original = s;
@@ -122,6 +149,7 @@ void cd_command(struct cmd_line *line) {
 
 int main(void) {
   while (1) {
+    greeting();
     char *buff = NULL;
     int read;
     unsigned long int len;
@@ -135,6 +163,17 @@ int main(void) {
     struct cmd_line line = parser(buff);
 
     //
+    // int fd[2];
+    // if (pipe(fd) == -1) {
+    //   return EXIT_FAILURE;
+    // }
+    int **fd;
+    if (line.count > 1) {
+      fd = malloc(line.count * sizeof(int *));
+      for (int i = 0; i < line.count; i++) {
+        fd[i] = malloc(2 * sizeof(int));
+      }
+    }
 
     for (int n = 0; n < line.count; n++) {
       char **cmd = malloc((line.cmds[n]->argc + 2) * sizeof(char *));
@@ -170,15 +209,51 @@ int main(void) {
         }
         free(cmd);
       } else {
-        // printf("{%s}\n", cmd[0]);
-        pid_t child_pid = fork();
-        if (child_pid == 0) {
-          execvp(line.cmds[n]->name, cmd);
+        if (line.count > 1) {
+          // printf("{%s}\n", cmd[0]);
+          if (n % 2 == 0) {
+            pipe(fd[n]);
+          } else {
+            if (n != line.count - 1) {
+              pipe(fd[n]);
+            }
+          }
+
+          pid_t child_pid = fork();
+          if (child_pid == 0) {
+            if (n % 2 == 0) {
+              dup2(fd[n / 2][1], STDOUT_FILENO);
+              close(fd[n / 2][0]);
+              close(fd[n / 2][1]);
+            } else {
+              dup2(fd[n / 2][0], STDIN_FILENO);
+              close(fd[n / 2][0]);
+              close(fd[n / 2][1]);
+            }
+
+            execvp(line.cmds[n]->name, cmd);
+          }
+          if (n == 1) {
+            close(fd[n / 2][0]);
+            close(fd[n / 2][1]);
+          }
+
+          waitpid(child_pid, NULL, 0);
+        } else {
+          pid_t child_pid = fork();
+          if (child_pid == 0) execvp(line.cmds[n]->name, cmd);
+          waitpid(child_pid, NULL, 0);
         }
         free(cmd);
-        waitpid(child_pid, NULL, 0);
       }
       //
+    }
+
+    if (line.count > 1) {
+      for (int i = 0; i < line.count; i++) {
+        free(fd[i]);
+      }
+      free(fd);
     }
 
     for (int k = 0; k < line.count; k++) {
