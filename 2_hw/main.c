@@ -41,12 +41,6 @@ void greeting() {
   printf(ANSI_COLOR_YELLOW "$ " ANSI_COLOR_RESET);
 }
 
-// void red() { printf("\033[1;31m"); }
-
-// void yellow() { printf("\033[1;33m"); }
-
-// void reset() { printf("\033[0m"); }
-
 char *string_trim_inplace(char *s) {
   char *original = s;
   size_t len = 0;
@@ -76,28 +70,62 @@ void delete_comments(char *s) {
 }
 
 void commandParser(struct cmd *cmd, char *comm) {
-  // printf("hi from com parser\n");
-
-  char *rest = NULL;
-  char *token;
-
   int flag = 0;
   cmd->argv = malloc(1 * sizeof(char *));
   cmd->argc = 0;
 
-  for (token = strtok_r(comm, " ", &rest); token != NULL;
-       token = strtok_r(NULL, " ", &rest)) {
-    // printf("subtoken: {%s}\n", token);
-    // if (*token == '\"') {
-    //   while (token != '\"') {
-    //     token++;
-    //   }
-    // }
+  char *start, *end;
+  start = comm;
+  end = comm;
+
+  while (*start != '\0') {
+    while (*start == ' ') start++;
+    end = start;
+
+    if (*end == '\"') {
+      start++;
+      end++;
+      while (*end != '\"') {
+        end++;
+      }
+      end--;
+    } else if (*end == '\'') {
+      start++;
+      end++;
+      while (*end != '\'') {
+        end++;
+      }
+      end--;
+    } else if (*end == '>') {
+      if (*(end + 1) == '>') {
+        end += 1;
+      }
+    } else if (((*end == '|'))) {
+    } else {
+      while (((*end != ' ') && (*end != '>') && (*end != '|')) && (*end)) end++;
+      end--;
+    }
+
+    char *token = malloc(sizeof(char) * (end - start + 2));
+    memcpy(token, start, end - start + 1);
+    token[end - start + 1] = '\0';
+
+    if (((end[1] == '\"') && (*(start - 1) == '\"')) ||
+        ((end[1] == '\'') && (*(start - 1) == '\''))) {
+      if (end[2])
+        start = end + 2;
+      else
+        *start = '\0';
+    } else
+      start = end + 1;
+
+    printf("{%s}", token);
+
     if (!flag) {
-      cmd->name = strdup(token);
+      cmd->name = token;
       flag = 1;
     } else {
-      cmd->argv[cmd->argc] = strdup(token);
+      cmd->argv[cmd->argc] = token;
       cmd->argc += 1;
 
       char **new_argv = realloc(cmd->argv, sizeof(char *) * (cmd->argc + 1));
@@ -150,6 +178,7 @@ void cd_command(struct cmd_line *line) {
 int main(void) {
   while (1) {
     greeting();
+
     char *buff = NULL;
     int read;
     unsigned long int len;
@@ -162,16 +191,12 @@ int main(void) {
 
     struct cmd_line line = parser(buff);
 
-    //
-    // int fd[2];
-    // if (pipe(fd) == -1) {
-    //   return EXIT_FAILURE;
-    // }
     int **fd;
     if (line.count > 1) {
       fd = malloc(line.count * sizeof(int *));
       for (int i = 0; i < line.count; i++) {
         fd[i] = malloc(2 * sizeof(int));
+        pipe(fd[i]);
       }
     }
 
@@ -210,32 +235,30 @@ int main(void) {
         free(cmd);
       } else {
         if (line.count > 1) {
-          // printf("{%s}\n", cmd[0]);
-          if (n % 2 == 0) {
-            pipe(fd[n]);
-          } else {
-            if (n != line.count - 1) {
-              pipe(fd[n]);
-            }
-          }
-
           pid_t child_pid = fork();
           if (child_pid == 0) {
-            if (n % 2 == 0) {
-              dup2(fd[n / 2][1], STDOUT_FILENO);
-              close(fd[n / 2][0]);
-              close(fd[n / 2][1]);
+            if (n == 0) {
+              dup2(fd[n][1], STDOUT_FILENO);
+              close(fd[n][0]);
+              close(fd[n][1]);
+            } else if (n == line.count - 1) {
+              dup2(fd[n - 1][0], STDIN_FILENO);
+              close(fd[n - 1][0]);
+              close(fd[n - 1][1]);
             } else {
-              dup2(fd[n / 2][0], STDIN_FILENO);
-              close(fd[n / 2][0]);
-              close(fd[n / 2][1]);
+              dup2(fd[n - 1][0], STDIN_FILENO);
+              dup2(fd[n][1], STDOUT_FILENO);
+              close(fd[n][0]);
+              close(fd[n][1]);
+              close(fd[n - 1][0]);
+              close(fd[n - 1][1]);
             }
-
             execvp(line.cmds[n]->name, cmd);
           }
-          if (n == 1) {
-            close(fd[n / 2][0]);
-            close(fd[n / 2][1]);
+
+          if (n > 0) {
+            close(fd[n - 1][0]);
+            close(fd[n - 1][1]);
           }
 
           waitpid(child_pid, NULL, 0);
