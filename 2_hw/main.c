@@ -70,6 +70,7 @@ void delete_comments(char *s) {
 }
 
 void commandParser(struct cmd *cmd, char *comm) {
+  // printf("!{%s}!", comm);
   int flag = 0;
   cmd->argv = malloc(1 * sizeof(char *));
   cmd->argc = 0;
@@ -80,6 +81,7 @@ void commandParser(struct cmd *cmd, char *comm) {
 
   while (*start != '\0') {
     while (*start == ' ') start++;
+    if (*start == '\0') break;
     end = start;
 
     if (*end == '\"') {
