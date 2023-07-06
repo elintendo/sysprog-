@@ -9,15 +9,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "greeting.h"
 #include "string_trim.h"
-
-#define ANSI_COLOR_RED "\x1b[31m"
-#define ANSI_COLOR_GREEN "\x1b[32m"
-#define ANSI_COLOR_YELLOW "\x1b[33m"
-#define ANSI_COLOR_BLUE "\x1b[34m"
-#define ANSI_COLOR_MAGENTA "\x1b[35m"
-#define ANSI_COLOR_CYAN "\x1b[36m"
-#define ANSI_COLOR_RESET "\x1b[0m"
 
 struct cmd {
   char *name;
@@ -29,19 +22,6 @@ struct cmd_line {
   struct cmd **cmds;
   int count;
 };
-
-void greeting() {
-  // "orsh-0.1$ "
-  printf(ANSI_COLOR_RED "o" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_GREEN "r" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_YELLOW "s" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_BLUE "h" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_MAGENTA "-" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_CYAN "0" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_CYAN "." ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_CYAN "1" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_RED "$ " ANSI_COLOR_RESET);
-}
 
 void delete_comments(char *s) {
   char *p = s;
@@ -185,40 +165,40 @@ int main(void) {
     int i = 0;
 
     int c = 0;
+    char buff[1000] = "";
 
     do {
       unsigned long int len;
       buffs[i] = NULL;
       getline(&buffs[i], &len, stdin);
-      c += numQuotes(buffs[i]);
+      // c += numQuotes(buffs[i]);
       buffs = realloc(buffs, sizeof(char *) * (i + 2));
       i++;
     } while ((buffs[i - 1][strlen(buffs[i - 1]) - 2] == '\\') || (c % 2 != 0));
 
-    char buff[1000] = "";
-    for (int k = 0; k < i; k++) {
-      if (buffs[k][strlen(buffs[k]) - 2] == '\\') {
-        buffs[k][strlen(buffs[k]) - 2] = '\0';
-      }
-      if (k == 0) {
-        if (i > 1) {
-          while (isspace((unsigned char)*buffs[k])) {
-            buffs[k]++;
-          }
+    if (i == 1) {
+      string_trim_inplace(buffs[0]);
+      strcat(buff, buffs[0]);
+    } else {
+      for (int k = 0; k < i; k++) {
+        if (k == 0) {
+          string_trim_beginning(buffs[k]);
+          char *lastChar = &buffs[k][strlen(buffs[k]) - 1];
+          *lastChar = '\0';
+          strcat(buff, buffs[k]);
+        } else if (k == i - 1) {
+          char *lastChar = &buffs[k][strlen(buffs[k]) - 1];
+          *lastChar = '\0';
           strcat(buff, buffs[k]);
         } else {
-          string_trim_inplace(buffs[k]);
+          char *secondLast = &buffs[k][strlen(buffs[k]) - 2];
+          *secondLast = '\0';
           strcat(buff, buffs[k]);
         }
-      } else if (k == i - 1) {
-        string_trim(buffs[k]);
-        strcat(buff, buffs[k]);
-      } else
-        strcat(buff, buffs[k]);
-      printf("{{%s}}", buffs[k]);
+      }
     }
-
-    for (int k = 0; k < i; k++) {
+    printf("%s", buff);
+    for (int k = 0; k < i; k++) {  // i + 1?!
       free(buffs[k]);
     }
     free(buffs);
