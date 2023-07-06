@@ -1,7 +1,20 @@
-GCC_FLAGS = -Wextra -Werror -Wall -Wno-gnu-folding-constant
+CC = gcc
+CFLAGS = -Wextra -Werror -Wall -Wno-gnu-folding-constant
+TARGET = orsh
 
-all: heap_help.c main.c
-	gcc $(GCC_FLAGS) heap_help.c main.c
+PREF_SRC = ./src/
+PREF_OBJ = ./obj/
+
+SRC = $(wildcard $(PREF_SRC)*.c)
+OBJ = $(patsubst $(PREF_SRC)%.c, $(PREF_OBJ)%.o, $(SRC))
+
+all: $(TARGET)
+
+$(TARGET) : $(OBJ)
+	$(CC) $(CFLAGS) $(OBJ) -o $(TARGET)
+
+$(PREF_OBJ)%.o : $(PREF_SRC)%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm a.out
+	rm $(TARGET) $(PREF_OBJ)*.o

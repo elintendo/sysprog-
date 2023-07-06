@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "string_trim.h"
+
 #define ANSI_COLOR_RED "\x1b[31m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_YELLOW "\x1b[33m"
@@ -36,28 +38,9 @@ void greeting() {
   printf(ANSI_COLOR_BLUE "h" ANSI_COLOR_RESET);
   printf(ANSI_COLOR_MAGENTA "-" ANSI_COLOR_RESET);
   printf(ANSI_COLOR_CYAN "0" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_RED "." ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_GREEN "1" ANSI_COLOR_RESET);
-  printf(ANSI_COLOR_YELLOW "$ " ANSI_COLOR_RESET);
-}
-
-char *string_trim_inplace(char *s) {
-  char *original = s;
-  size_t len = 0;
-
-  while (isspace((unsigned char)*s)) {
-    s++;
-  }
-  if (*s) {
-    char *p = s;
-    while (*p) p++;
-    while (isspace((unsigned char)*(--p)))
-      ;
-    p[1] = '\0';
-    len = (size_t)(p - s + 1);
-  }
-
-  return (s == original) ? s : memmove(original, s, len + 1);
+  printf(ANSI_COLOR_CYAN "." ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_CYAN "1" ANSI_COLOR_RESET);
+  printf(ANSI_COLOR_RED "$ " ANSI_COLOR_RESET);
 }
 
 void delete_comments(char *s) {
@@ -70,7 +53,7 @@ void delete_comments(char *s) {
 }
 
 void commandParser(struct cmd *cmd, char *comm) {
-  // printf("!{%s}!", comm);
+  // printf("!{%ld}!", strlen(comm));
   int flag = 0;
   cmd->argv = malloc(1 * sizeof(char *));
   cmd->argc = 0;
@@ -78,6 +61,8 @@ void commandParser(struct cmd *cmd, char *comm) {
   char *start, *end;
   start = comm;
   end = comm;
+
+  printf("token: [%s]\n", comm);
 
   while (*start != '\0') {
     while (*start == ' ') start++;
@@ -111,6 +96,7 @@ void commandParser(struct cmd *cmd, char *comm) {
     char *token = malloc(sizeof(char) * (end - start + 2));
     memcpy(token, start, end - start + 1);
     token[end - start + 1] = '\0';
+    // printf("token: [%s]\n", token);
 
     if (((end[1] == '\"') && (*(start - 1) == '\"')) ||
         ((end[1] == '\'') && (*(start - 1) == '\''))) {
@@ -121,7 +107,9 @@ void commandParser(struct cmd *cmd, char *comm) {
     } else
       start = end + 1;
 
-    printf("{%s}", token);
+    // while (*token == '\n') token++;
+    // if (token[strlen(token) - 1] == '\n') token[strlen(token) - 1] = '\0';
+    // printf("{%s}", token);
 
     if (!flag) {
       cmd->name = token;
@@ -177,15 +165,64 @@ void cd_command(struct cmd_line *line) {
   }
 }
 
+int numQuotes(char *str) {
+  // printf("got: %s\n", str);
+  char *s = str;
+  size_t count = 0;
+
+  while (*s) {
+    if ((*s == '\"') || (*s == '\'')) count++;
+    s++;
+  }
+  return count;
+}
+
 int main(void) {
   while (1) {
     greeting();
 
-    char *buff = NULL;
-    int read;
-    unsigned long int len;
-    read = getline(&buff, &len, stdin);
-    if (-1 == read) printf("No line read...\n");
+    char **buffs = malloc(sizeof(char *) * 1);
+    int i = 0;
+
+    int c = 0;
+
+    do {
+      unsigned long int len;
+      buffs[i] = NULL;
+      getline(&buffs[i], &len, stdin);
+      c += numQuotes(buffs[i]);
+      buffs = realloc(buffs, sizeof(char *) * (i + 2));
+      i++;
+    } while ((buffs[i - 1][strlen(buffs[i - 1]) - 2] == '\\') || (c % 2 != 0));
+
+    char buff[1000] = "";
+    for (int k = 0; k < i; k++) {
+      if (buffs[k][strlen(buffs[k]) - 2] == '\\') {
+        buffs[k][strlen(buffs[k]) - 2] = '\0';
+      }
+      if (k == 0) {
+        if (i > 1) {
+          while (isspace((unsigned char)*buffs[k])) {
+            buffs[k]++;
+          }
+          strcat(buff, buffs[k]);
+        } else {
+          string_trim_inplace(buffs[k]);
+          strcat(buff, buffs[k]);
+        }
+      } else if (k == i - 1) {
+        string_trim(buffs[k]);
+        strcat(buff, buffs[k]);
+      } else
+        strcat(buff, buffs[k]);
+      printf("{{%s}}", buffs[k]);
+    }
+
+    for (int k = 0; k < i; k++) {
+      free(buffs[k]);
+    }
+    free(buffs);
+
     if (*buff == '\n') continue;
 
     string_trim_inplace(buff);
@@ -215,7 +252,18 @@ int main(void) {
       if (!strcmp(line.cmds[n]->name, "cd")) {
         cd_command(&line);
         free(cmd);
-      } else if (!strcmp(line.cmds[n]->name, "exit")) {
+      } else if ((!strcmp(line.cmds[n]->name, "exit")) && (line.count == 1)) {
+        free(cmd);
+        for (int k = 0; k < line.count; k++) {
+          free(line.cmds[k]->name);
+          for (int m = 0; m < line.cmds[k]->argc; m++) {
+            free(line.cmds[k]->argv[m]);
+          }
+          free(line.cmds[k]->argv);
+          free(line.cmds[k]);
+        }
+        free(line.cmds);
+        exit(0);
       } else if ((line.cmds[n]->argc >= 2) &&
                  (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
         pid_t child_pid = fork();
@@ -290,6 +338,6 @@ int main(void) {
       free(line.cmds[k]);
     }
     free(line.cmds);
-    free(buff);
+    // free(buff);
   }
 }
