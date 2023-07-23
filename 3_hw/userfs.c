@@ -59,6 +59,7 @@ struct filedesc {
   int fd;
   struct block *block; /* block to write in */
   int offset;
+  int perm; /* permission flag */
   /* PUT HERE OTHER MEMBERS */
 };
 
@@ -74,13 +75,13 @@ static int file_descriptor_capacity = 0;
 
 enum ufs_error_code ufs_errno() { return ufs_error_code; }
 
-int ufs_open(const char *filename, int flags) {
+int ufs_open(const char *filename, int flag) {
   struct file *f = file_list;
   while (f != NULL && strcmp(f->name, filename)) f = f->prev;
 
   /* If a file does not exist, then create it (if UFS_CREATE is in place). */
   if (f == NULL) {
-    if (flags == UFS_CREATE) {
+    if (flag == UFS_CREATE) {
       struct file *file = calloc(1, sizeof(struct file));
       file->name = strdup(filename);
       if (file_list != NULL) file_list->next = file;
@@ -122,6 +123,7 @@ int ufs_open(const char *filename, int flags) {
   fdesc->file = f;
   fdesc->block = f->block_list;
   fdesc->offset = 0;
+  fdesc->perm = flag;
   file_descriptors[minFD] = fdesc;
   file_descriptor_count++;
 
@@ -139,6 +141,11 @@ ssize_t ufs_write(int fd, const char *buf, size_t size) {
 
   if (!file_descriptors[fd]) {
     ufs_error_code = UFS_ERR_NO_FILE;
+    return -1;
+  }
+
+  if (file_descriptors[fd]->perm == UFS_READ_ONLY) {
+    ufs_error_code = UFS_ERR_NO_PERMISSION;
     return -1;
   }
 
@@ -227,6 +234,11 @@ ssize_t ufs_read(int fd, char *buf, size_t size) {
 
   if (!file_descriptors[fd]) {
     ufs_error_code = UFS_ERR_NO_FILE;
+    return -1;
+  }
+
+  if (file_descriptors[fd]->perm == UFS_WRITE_ONLY) {
+    ufs_error_code = UFS_ERR_NO_PERMISSION;
     return -1;
   }
 
