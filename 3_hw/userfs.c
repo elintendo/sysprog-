@@ -182,7 +182,7 @@ ssize_t ufs_write(int fd, const char *buf, size_t size) {
     int *offset = &(file_descriptors[fd]->offset);
     int bytesToWrite = (_size > BLOCK_SIZE) ? BLOCK_SIZE : _size;
 
-    if (bytesToWrite <= BLOCK_SIZE - *occupied) {
+    if (bytesToWrite <= BLOCK_SIZE - *offset) {
       memmove(file_descriptors[fd]->block->memory + *offset, buf, bytesToWrite);
       buf += BLOCK_SIZE - *occupied;
       if (bytesToWrite >= *occupied - *offset)
@@ -327,6 +327,98 @@ int ufs_delete(const char *filename) {
   if (f->next) f->next->prev = f->prev;
   if (f->prev) f->prev->next = f->next;
 
+  return 0;
+}
+
+int ufs_resize(int fd, size_t new_size) {
+  if ((fd >= file_descriptor_capacity) || (fd < 0)) {
+    ufs_error_code = UFS_ERR_NO_FILE;
+    return -1;
+  }
+
+  if (!file_descriptors[fd]) {
+    ufs_error_code = UFS_ERR_NO_FILE;
+    return -1;
+  }
+
+  if (new_size > MAX_FILE_SIZE) {
+    ufs_error_code = UFS_ERR_NO_MEM;
+    return -1;
+  }
+
+  struct file *f = file_descriptors[fd]->file;
+
+  /* Count size of a file */
+  size_t size = 0;
+  struct block *p = f->last_block;
+  while (p) {
+    size += p->occupied;
+    p = p->prev;
+  }
+
+  if (size <= new_size) {
+    /* Increase size of a file*/
+    size_t blocks_to_add = (new_size - size) % BLOCK_SIZE + 1;
+    for (size_t i = 0; i < blocks_to_add; i++) {
+      struct block *block = calloc(1, sizeof(struct block));
+      block->memory = calloc(BLOCK_SIZE, 1);
+
+      f->last_block->next = block;
+      block->prev = f->last_block;
+      f->last_block = block;
+      f->blockAmount += 1;
+    }
+  } else {
+    /* Shrink an offset of every file descriptor */
+    for (int i = 0; i < file_descriptor_count; i++) {
+      if (file_descriptors[i]->file == f) {
+        int *offset = &(file_descriptors[i]->offset);
+        int numBlocks = 0;
+        struct block *last = file_descriptors[i]->block;
+        while (last) {
+          numBlocks++;
+          last = last->prev;
+        }
+
+        if ((numBlocks - 1) * BLOCK_SIZE + *offset > (int)new_size) {
+          int blockIndex = new_size / BLOCK_SIZE;
+          struct block *block = f->block_list;
+          for (int i = 0; i < blockIndex; i++) block = block->next;
+
+          file_descriptors[i]->block = block;
+          file_descriptors[i]->offset = new_size % BLOCK_SIZE;
+        }
+      }
+    }
+
+    /* Shrink a file */
+    size_t blocks_to_free = f->blockAmount - (new_size / BLOCK_SIZE + 1);
+    for (size_t i = 0; i < blocks_to_free; i++) {
+      f->blockAmount--;
+      struct block *last = f->last_block;
+
+      if ((last) && (last->prev)) {
+        last->prev->next = NULL;
+      }
+
+      if (f->last_block) {
+        f->last_block = f->last_block->prev;
+      }
+
+      free(last->memory);
+      free(last);
+    }
+
+    for (size_t i = new_size % BLOCK_SIZE; i < BLOCK_SIZE; i++) {
+      f->last_block->memory[i] = '\0';
+    }
+    f->last_block->occupied = new_size % BLOCK_SIZE;
+
+    // if (file_descriptors[fd]->perm == UFS_WRITE_ONLY) {
+    //   ufs_error_code = UFS_ERR_NO_PERMISSION;
+    //   return -1;
+    // }
+  }
   return 0;
 }
 
