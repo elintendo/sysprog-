@@ -327,6 +327,19 @@ int ufs_delete(const char *filename) {
   if (f->next) f->next->prev = f->prev;
   if (f->prev) f->prev->next = f->next;
 
+  /* If no open descriptors left, the file contents are to delete. */
+  if ((f->is_deleted) && (f->refs == 0)) {
+    free(f->name);
+    struct block *last = f->last_block;
+    while (last) {
+      struct block *p = last->prev;
+      free(last->memory);
+      free(last);
+      last = p;
+    }
+    free(f);  // Free struct file itself.
+  }
+
   return 0;
 }
 
@@ -439,7 +452,7 @@ void ufs_destroy(void) {
     struct block *lastBlock = last->last_block;
     while (lastBlock) {
       struct block *prev = lastBlock->prev;
-      free(prev->memory);
+      free(lastBlock);
       lastBlock = prev;
     }
 
