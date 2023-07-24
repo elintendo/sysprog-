@@ -109,7 +109,7 @@ int ufs_open(const char *filename, int flag) {
   }
 
   /* Find a fd with the least possible id */
-  int minFD;
+  int minFD = 0;
   for (int i = 0; i < file_descriptor_capacity; i++) {
     if (!file_descriptors[i]) {
       minFD = i;
