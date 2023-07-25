@@ -33,7 +33,7 @@ void delete_comments(char *s) {
 }
 
 void commandParser(struct cmd *cmd, char *comm) {
-  // printf("!{%ld}!", strlen(comm));
+  // printf("\n!{%s}!\n", comm);
   int flag = 0;
   cmd->argv = malloc(1 * sizeof(char *));
   cmd->argc = 0;
@@ -41,8 +41,6 @@ void commandParser(struct cmd *cmd, char *comm) {
   char *start, *end;
   start = comm;
   end = comm;
-
-  // printf("token: [%s]\n", comm);
 
   while (*start != '\0') {
     while (*start == ' ') start++;
@@ -57,12 +55,12 @@ void commandParser(struct cmd *cmd, char *comm) {
       }
       end--;
     } else if (*end == '\'') {
-      start++;
+      // start++;
       end++;
       while (*end != '\'') {
         end++;
       }
-      end--;
+      // end--;
     } else if (*end == '>') {
       if (*(end + 1) == '>') {
         end += 1;
@@ -85,6 +83,22 @@ void commandParser(struct cmd *cmd, char *comm) {
     token[end - start + 1] = '\0';
     printf("token: [%s]\n", token);
 
+    /* Remove \ signs for token. */
+    if ((*token != '\'') && (*token != '\'')) {
+      for (int i = 0; i < strlen(token); i++) {
+        char *s = token + i;  // s - start
+        if (*s == '\\') {
+          memmove(s, s + 1, strlen(token) - (s - token + 1));
+          s[strlen(s) - 1] = '\0';
+        }
+      }
+    } else {
+      size_t size = strlen(token);
+      memmove(token, token + 1, size - 2);
+      token[strlen(token) - 2] = '\0';
+    }
+    /* Applicable only if token is not in '' */
+
     if (((end[1] == '\"') && (*(start - 1) == '\"')) ||
         ((end[1] == '\'') && (*(start - 1) == '\''))) {
       if (end[2])
@@ -93,10 +107,6 @@ void commandParser(struct cmd *cmd, char *comm) {
         *start = '\0';
     } else
       start = end + 1;
-
-    // while (*token == '\n') token++;
-    // if (token[strlen(token) - 1] == '\n') token[strlen(token) - 1] = '\0';
-    // printf("{%s}", token);
 
     if (!flag) {
       cmd->name = token;
@@ -120,7 +130,6 @@ struct cmd_line parser(char *buff) {
   struct cmd_line res;
   res.count = 0;
   res.cmds = malloc(sizeof(*res.cmds));
-  // char *copy = strdup(buff);
 
   char *s = buff;
   char *p = buff;
@@ -143,21 +152,6 @@ struct cmd_line parser(char *buff) {
     p++;
   }
 
-  // char *rest = NULL;
-  // char *token;
-
-  // for (token = strtok_r(copy, "|", &rest); token != NULL;
-  //      token = strtok_r(NULL, "|", &rest)) {
-  //   // printf("token: {%s}\n", token);
-
-  //   res.cmds[res.count] = malloc(sizeof(**res.cmds));
-  //   commandParser(res.cmds[res.count], strdup(token));
-  //   ++res.count;
-
-  //   res.cmds = realloc(res.cmds, (res.count + 1) * sizeof(*res.cmds));
-  //   assert(res.cmds != NULL);
-  // }
-  // free(copy);
   return res;
 }
 
@@ -188,8 +182,14 @@ void quotesStatus(char *str, int *singleQuotesClosed, int *doubleQuotesClosed) {
         *singleQuotesClosed = 0;
       }
     } else {
-      if ((*s == '\"') && (*(s - 1) != '\\') && (*singleQuotesClosed)) {
-        *doubleQuotesClosed = 1;
+      if ((*s == '\"') && (*singleQuotesClosed)) {
+        if ((*(s - 1) == '\\')) {
+          if ((*(s - 2) == '\\')) {
+            *doubleQuotesClosed = 1;
+          }
+        } else {
+          *doubleQuotesClosed = 1;
+        }
       } else if ((*s == '\'') && (*doubleQuotesClosed)) {
         *singleQuotesClosed = 1;
       }
@@ -197,25 +197,120 @@ void quotesStatus(char *str, int *singleQuotesClosed, int *doubleQuotesClosed) {
 
     s++;
   }
+}
 
-  // while (*s) {
-  //   if ((*s == '\"') && (*(s - 1) != '\\')) {
-  //     doubleQuotesCount++;
-  //   } else if (*s == '\'')
-  //     singleQuotesCount++;
-  //   s++;
-  // }
+void execute(char *buff) {
+  /* Parse buff by | pipe sign .*/
+  struct cmd_line line = parser(buff);
+  int **fd;
+  if (line.count > 1) {
+    fd = malloc(line.count * sizeof(int *));
+    for (int i = 0; i < line.count; i++) {
+      fd[i] = malloc(2 * sizeof(int));
+      pipe(fd[i]);
+    }
+  }
 
-  // if (singleQuotesCount % 2 != 0) {
-  //   *singleQuotesClosed = 0;
-  //   return 0;
-  // }
+  for (int n = 0; n < line.count; n++) {
+    char **cmd = malloc((line.cmds[n]->argc + 2) * sizeof(char *));
+    cmd[0] = line.cmds[n]->name;
+    for (int i = 1; i < line.cmds[n]->argc + 1; i++) {
+      cmd[i] = line.cmds[n]->argv[i - 1];
+    }
+    cmd[line.cmds[n]->argc + 1] = (char *)0;
+    // printf("{%s}\n", cmd[0]);
+    char *secondLast = line.cmds[n]->argv[line.cmds[n]->argc - 2];  // ???
 
-  // if (singleQuotesClosed && doubleQuotesClosed) {
-  //   if ((singleQuotesCount + doubleQuotesCount) % 2 == 0) return 1;
-  // } else if (!singleQuotesClosed && doubleQuotesClosed) {
-  // }
-  // return 1;
+    if (!strcmp(line.cmds[n]->name, "cd")) {
+      cd_command(&line);
+      free(cmd);
+    } else if ((!strcmp(line.cmds[n]->name, "exit")) && (line.count == 1)) {
+      free(cmd);
+      free(buff);
+      for (int k = 0; k < line.count; k++) {
+        free(line.cmds[k]->name);
+        for (int m = 0; m < line.cmds[k]->argc; m++) {
+          free(line.cmds[k]->argv[m]);
+        }
+        free(line.cmds[k]->argv);
+        free(line.cmds[k]);
+      }
+      free(line.cmds);
+      exit(0);
+    } else if ((line.cmds[n]->argc >= 2) &&
+               (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
+      pid_t child_pid = fork();
+      if (child_pid == 0) {
+        char *file_name = line.cmds[n]->argv[line.cmds[n]->argc - 1];
+        int file;
+
+        if (!strcmp(secondLast, ">"))
+          file = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+        else
+          file = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0777);
+
+        dup2(file, STDOUT_FILENO);
+        close(file);
+        cmd[line.cmds[n]->argc] = (char *)0;
+        cmd[line.cmds[n]->argc - 1] = (char *)0;
+        execvp(line.cmds[n]->name, cmd);
+      }
+      free(cmd);
+    } else {
+      if (line.count > 1) {
+        pid_t child_pid = fork();
+        if (child_pid == 0) {
+          if (n == 0) {
+            dup2(fd[n][1], STDOUT_FILENO);
+            close(fd[n][0]);
+            close(fd[n][1]);
+          } else if (n == line.count - 1) {
+            dup2(fd[n - 1][0], STDIN_FILENO);
+            close(fd[n - 1][0]);
+            close(fd[n - 1][1]);
+          } else {
+            dup2(fd[n - 1][0], STDIN_FILENO);
+            dup2(fd[n][1], STDOUT_FILENO);
+            close(fd[n][0]);
+            close(fd[n][1]);
+            close(fd[n - 1][0]);
+            close(fd[n - 1][1]);
+          }
+          execvp(line.cmds[n]->name, cmd);
+        }
+
+        if (n > 0) {
+          close(fd[n - 1][0]);
+          close(fd[n - 1][1]);
+        }
+
+        // waitpid(child_pid, NULL, 0);
+      } else {
+        pid_t child_pid = fork();
+        if (child_pid == 0) execvp(line.cmds[n]->name, cmd);
+        waitpid(child_pid, NULL, 0);
+      }
+      free(cmd);
+    }
+  }
+
+  if (line.count > 1) {
+    for (int i = 0; i < line.count; i++) {
+      free(fd[i]);
+    }
+    free(fd);
+  }
+
+  for (int k = 0; k < line.count; k++) {
+    free(line.cmds[k]->name);
+    for (int m = 0; m < line.cmds[k]->argc; m++) {
+      free(line.cmds[k]->argv[m]);
+    }
+    free(line.cmds[k]->argv);
+    free(line.cmds[k]);
+  }
+  free(line.cmds);
+  free(buff);
 }
 
 int main(void) {
@@ -229,7 +324,6 @@ int main(void) {
      */
     int singleQuotesClosed = 1;
     int doubleQuotesClosed = 1;
-    int st = 1;
 
     /*
     The input is read until no |, \ in the end. (\\ and \| are ok)
@@ -238,7 +332,12 @@ int main(void) {
     do {
       unsigned long int len;
       buffs[i] = NULL;
-      getline(buffs + i, &len, stdin);
+      int x = getline(buffs + i, &len, stdin);
+      if (x == -1) {
+        for (int k = 0; k < i + 1; k++) free(buffs[k]);
+        free(buffs);
+        exit(0);
+      }
       quotesStatus(buffs[i], &singleQuotesClosed, &doubleQuotesClosed);
       buffs = realloc(buffs, sizeof(char *) * (i + 2));
       i++;
@@ -248,8 +347,7 @@ int main(void) {
               (buffs[i - 1][strlen(buffs[i - 1]) - 3] != '\\')) ||
              (!singleQuotesClosed || !doubleQuotesClosed));
 
-    // printf("{%s}", buffs[0]);
-
+    /* Concatenate all pieces in a single buff. */
     char *buff;
     if (i == 1) {
       string_trim_inplace(buffs[0]);
@@ -279,125 +377,19 @@ int main(void) {
         }
       }
     }
-    // printf("%s", buff);
     for (int k = 0; k < i; k++) {
       free(buffs[k]);
     }
     free(buffs);
 
-    if (*buff == '\n') continue;
+    /* Additional makeup for buffer. */
+    if ((*buff == '\n') || (!*buff)) continue;
     string_trim_inplace(buff);
     delete_comments(buff);
 
-    struct cmd_line line = parser(buff);
-    int **fd;
-    if (line.count > 1) {
-      fd = malloc(line.count * sizeof(int *));
-      for (int i = 0; i < line.count; i++) {
-        fd[i] = malloc(2 * sizeof(int));
-        pipe(fd[i]);
-      }
-    }
+    printf("buff: [%s]\n", buff);
 
-    for (int n = 0; n < line.count; n++) {
-      char **cmd = malloc((line.cmds[n]->argc + 2) * sizeof(char *));
-      cmd[0] = line.cmds[n]->name;
-      for (int i = 1; i < line.cmds[n]->argc + 1; i++) {
-        cmd[i] = line.cmds[n]->argv[i - 1];
-      }
-      cmd[line.cmds[n]->argc + 1] = (char *)0;
-      // printf("{%s}\n", cmd[0]);
-      char *secondLast = line.cmds[n]->argv[line.cmds[n]->argc - 2];
-
-      if (!strcmp(line.cmds[n]->name, "cd")) {
-        cd_command(&line);
-        free(cmd);
-      } else if ((!strcmp(line.cmds[n]->name, "exit")) && (line.count == 1)) {
-        free(cmd);
-        for (int k = 0; k < line.count; k++) {
-          free(line.cmds[k]->name);
-          for (int m = 0; m < line.cmds[k]->argc; m++) {
-            free(line.cmds[k]->argv[m]);
-          }
-          free(line.cmds[k]->argv);
-          free(line.cmds[k]);
-        }
-        free(line.cmds);
-        exit(0);
-      } else if ((line.cmds[n]->argc >= 2) &&
-                 (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
-        pid_t child_pid = fork();
-        if (child_pid == 0) {
-          char *file_name = line.cmds[n]->argv[line.cmds[n]->argc - 1];
-          int file;
-
-          if (!strcmp(secondLast, ">"))
-            file = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-          else
-            file = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0777);
-
-          dup2(file, STDOUT_FILENO);
-          close(file);
-          cmd[line.cmds[n]->argc] = (char *)0;
-          cmd[line.cmds[n]->argc - 1] = (char *)0;
-          execvp(line.cmds[n]->name, cmd);
-        }
-        free(cmd);
-      } else {
-        if (line.count > 1) {
-          pid_t child_pid = fork();
-          if (child_pid == 0) {
-            if (n == 0) {
-              dup2(fd[n][1], STDOUT_FILENO);
-              close(fd[n][0]);
-              close(fd[n][1]);
-            } else if (n == line.count - 1) {
-              dup2(fd[n - 1][0], STDIN_FILENO);
-              close(fd[n - 1][0]);
-              close(fd[n - 1][1]);
-            } else {
-              dup2(fd[n - 1][0], STDIN_FILENO);
-              dup2(fd[n][1], STDOUT_FILENO);
-              close(fd[n][0]);
-              close(fd[n][1]);
-              close(fd[n - 1][0]);
-              close(fd[n - 1][1]);
-            }
-            execvp(line.cmds[n]->name, cmd);
-          }
-
-          if (n > 0) {
-            close(fd[n - 1][0]);
-            close(fd[n - 1][1]);
-          }
-
-          waitpid(child_pid, NULL, 0);
-        } else {
-          pid_t child_pid = fork();
-          if (child_pid == 0) execvp(line.cmds[n]->name, cmd);
-          waitpid(child_pid, NULL, 0);
-        }
-        free(cmd);
-      }
-      //
-    }
-
-    if (line.count > 1) {
-      for (int i = 0; i < line.count; i++) {
-        free(fd[i]);
-      }
-      free(fd);
-    }
-
-    for (int k = 0; k < line.count; k++) {
-      free(line.cmds[k]->name);
-      for (int m = 0; m < line.cmds[k]->argc; m++) {
-        free(line.cmds[k]->argv[m]);
-      }
-      free(line.cmds[k]->argv);
-      free(line.cmds[k]);
-    }
-    free(line.cmds);
-    free(buff);
+    /* Execute the whole line, pipe by pipe. */
+    execute(buff);
   }
 }
