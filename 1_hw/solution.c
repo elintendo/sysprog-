@@ -123,9 +123,9 @@ static int coroutine_func_f(void *context) {
   uint64_t totalTime = getTime() - ts1 - lostTime;
 
   printf(
-      "Courutine that sorted %s has been working for %ld ms and yielded %d "
+      "Courutine that sorted %s has been working for %llu ms and yielded %d "
       "times\n",
-      fa->fileToSort, totalTime / 1000000, yieldNum);
+      fa->fileToSort, (unsigned long long)(totalTime / 1000000), yieldNum);
   fclose(fp);
   return 0;
 }
@@ -197,7 +197,8 @@ int main(int argc, char **argv) {
   free(sizes);
 
   uint64_t ts2 = getTime();
-  printf("Total elapsed time: %ld ms\n", (ts2 - ts1) / 1000000);
+  printf("Total elapsed time: %llu ms\n",
+         (unsigned long long)((ts2 - ts1) / 1000000));
 
   return 0;
 }
