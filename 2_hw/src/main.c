@@ -34,6 +34,7 @@ void delete_comments(char *s) {
 
 void commandParser(struct cmd *cmd, char *comm) {
   // printf("\n!{%s}!\n", comm);
+
   int flag = 0;
   cmd->argv = malloc(1 * sizeof(char *));
   cmd->argc = 0;
@@ -81,10 +82,10 @@ void commandParser(struct cmd *cmd, char *comm) {
     char *token = malloc(sizeof(char) * (end - start + 2));
     memcpy(token, start, end - start + 1);
     token[end - start + 1] = '\0';
-    printf("token: [%s]\n", token);
+    // printf("token: [%s]\n", token);
 
     /* Remove \ signs for token. */
-    if ((*token != '\'') && (*token != '\'')) {
+    if (*token != '\'') {
       for (int i = 0; i < strlen(token); i++) {
         char *s = token + i;  // s - start
         if (*s == '\\') {
@@ -221,6 +222,21 @@ void execute(char *buff) {
     // printf("{%s}\n", cmd[0]);
     char *secondLast = line.cmds[n]->argv[line.cmds[n]->argc - 2];  // ???
 
+    if (line.cmds[n]->name == NULL) {
+      free(cmd);
+      free(buff);
+      for (int k = 0; k < line.count; k++) {
+        free(line.cmds[k]->name);
+        for (int m = 0; m < line.cmds[k]->argc; m++) {
+          free(line.cmds[k]->argv[m]);
+        }
+        free(line.cmds[k]->argv);
+        free(line.cmds[k]);
+      }
+      free(line.cmds);
+      exit(0);
+    }  // means comment
+
     if (!strcmp(line.cmds[n]->name, "cd")) {
       cd_command(&line);
       free(cmd);
@@ -284,7 +300,7 @@ void execute(char *buff) {
           close(fd[n - 1][1]);
         }
 
-        // waitpid(child_pid, NULL, 0);
+        waitpid(child_pid, NULL, 0);
       } else {
         pid_t child_pid = fork();
         if (child_pid == 0) execvp(line.cmds[n]->name, cmd);
@@ -387,9 +403,10 @@ int main(void) {
     string_trim_inplace(buff);
     delete_comments(buff);
 
-    printf("buff: [%s]\n", buff);
+    // printf("buff: [%s]\n", buff);
 
     /* Execute the whole line, pipe by pipe. */
     execute(buff);
   }
+  // return 0;
 }

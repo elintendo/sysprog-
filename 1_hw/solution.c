@@ -67,11 +67,13 @@ uint64_t mergeSort(int arr[], int l, int r, int *yieldNum, uint64_t quant,
 
     uint64_t as1 = mergeSort(arr, l, m, yieldNum, quant, startTime);
 
-    *yieldNum += 1;
     uint64_t ts1 = getTime();
 
-    if (ts1 - *startTime >= quant) coro_yield();
-    *startTime = getTime();
+    if (ts1 - *startTime >= quant) {
+      *yieldNum += 1;
+      coro_yield();
+      *startTime = getTime();
+    }
 
     uint64_t ts2 = getTime();
 
