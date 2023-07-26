@@ -88,7 +88,7 @@ void commandParser(struct cmd *cmd, char *comm) {
     if (*token != '\'') {
       for (int i = 0; i < strlen(token); i++) {
         char *s = token + i;  // s - start
-        if (*s == '\\') {
+        if ((*s == '\\') && ((*(s - 1) == '\\') || (*(s - 1) == '\"'))) {
           memmove(s, s + 1, strlen(token) - (s - token + 1));
           s[strlen(s) - 1] = '\0';
         }
@@ -204,6 +204,7 @@ void execute(char *buff) {
   /* Parse buff by | pipe sign .*/
   struct cmd_line line = parser(buff);
   int **fd;
+  int *child_pids;
   if (line.count > 1) {
     fd = malloc(line.count * sizeof(int *));
     for (int i = 0; i < line.count; i++) {
@@ -221,6 +222,10 @@ void execute(char *buff) {
     cmd[line.cmds[n]->argc + 1] = (char *)0;
     // printf("{%s}\n", cmd[0]);
     char *secondLast = line.cmds[n]->argv[line.cmds[n]->argc - 2];  // ???
+
+    if (line.count > 1) {
+      child_pids = calloc(line.count, sizeof(int));  // free in every if
+    }
 
     if (line.cmds[n]->name == NULL) {
       free(cmd);
@@ -295,12 +300,14 @@ void execute(char *buff) {
           execvp(line.cmds[n]->name, cmd);
         }
 
+        child_pids[n] = child_pid;
+
         if (n > 0) {
           close(fd[n - 1][0]);
           close(fd[n - 1][1]);
         }
 
-        waitpid(child_pid, NULL, 0);
+        // waitpid(child_pid, NULL, 0);
       } else {
         pid_t child_pid = fork();
         if (child_pid == 0) execvp(line.cmds[n]->name, cmd);
@@ -311,10 +318,15 @@ void execute(char *buff) {
   }
 
   if (line.count > 1) {
+    for (int k = 0; k < line.count; k++) {
+      waitpid(child_pids[k], NULL, 0);
+    }
+
     for (int i = 0; i < line.count; i++) {
       free(fd[i]);
     }
     free(fd);
+    free(child_pids);
   }
 
   for (int k = 0; k < line.count; k++) {
