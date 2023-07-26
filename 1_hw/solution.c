@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 199309L
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +9,14 @@
 
 #include "libcoro.h"
 
+typedef struct func_arg {
+  int *arrToSort;
+  int arrSize;
+  char *fileToSort;
+  uint64_t timeQuant;
+} Func_arg;
+
+/* Returns CLOCK_MONOTONIC time in ns. */
 uint64_t getTime(void) {
   struct timespec spec;
   clock_gettime(CLOCK_MONOTONIC, &spec);
@@ -50,18 +60,19 @@ void merge(int arr[], int l, int m, int r) {
   }
 }
 
-uint64_t mergeSort(int arr[], int l, int r, int *yieldNum) {
+uint64_t mergeSort(int arr[], int l, int r, int *yieldNum, uint64_t *quant,
+                   uint64_t start) {
   if (l < r) {
     int m = l + (r - l) / 2;
 
-    uint64_t as1 = mergeSort(arr, l, m, yieldNum);
+    uint64_t as1 = mergeSort(arr, l, m, yieldNum, quant, start);
 
     *yieldNum += 1;
     uint64_t ts1 = getTime();
-    coro_yield();
+    if (ts1 - start >= *quant) coro_yield();
     uint64_t ts2 = getTime();
 
-    uint64_t as2 = mergeSort(arr, m + 1, r, yieldNum);
+    uint64_t as2 = mergeSort(arr, m + 1, r, yieldNum, quant, start);
 
     merge(arr, l, m, r);
     return ts2 - ts1 + as1 + as2;
@@ -100,13 +111,6 @@ int countFileSize(char *fileName) {
   return count;
 }
 
-typedef struct func_arg {
-  int *arrToSort;
-  int arrSize;
-  char *fileToSort;
-  long long int timeQuant;
-} Func_arg;
-
 static int coroutine_func_f(void *context) {
   uint64_t ts1 = getTime();
   int yieldNum = 0;
@@ -118,7 +122,8 @@ static int coroutine_func_f(void *context) {
     fscanf(fp, "%d ", &(fa->arrToSort)[i]);
   }
 
-  uint64_t lostTime = mergeSort(fa->arrToSort, 0, fa->arrSize - 1, &yieldNum);
+  uint64_t lostTime = mergeSort(fa->arrToSort, 0, fa->arrSize - 1, &yieldNum,
+                                &fa->timeQuant, ts1);
 
   uint64_t totalTime = getTime() - ts1 - lostTime;
 
@@ -149,6 +154,7 @@ int main(int argc, char **argv) {
     printf("Enter a proper number of coroutines.\n");
     return EXIT_FAILURE;
   }
+  coroNum = argc - 3; /* Currently, one courutine for one file. */
 
   coro_sched_init();
   int **arrs = (int **)calloc((argc - 3), sizeof(int *));
@@ -159,8 +165,8 @@ int main(int argc, char **argv) {
   for (int i = 0; i < argc - 3; ++i) {
     sizes[i] = countFileSize(argv[i + 3]);
     *(arrs + i) = (int *)calloc(sizes[i], sizeof(int));
-    fa[i] =
-        (Func_arg){*(arrs + i), sizes[i], argv[i + 3], targetLatency / coroNum};
+    fa[i] = (Func_arg){*(arrs + i), sizes[i], argv[i + 3],
+                       (targetLatency / coroNum) * 1000};  // from µs to ns
     coro_new(coroutine_func_f, &(fa[i]));
   }
 
@@ -190,7 +196,6 @@ int main(int argc, char **argv) {
   }
 
   fclose(file);
-
   free(arrs[argc - 3 - 1]);
   free(arrs);
   free(fa);
