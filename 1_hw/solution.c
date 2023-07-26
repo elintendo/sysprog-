@@ -60,19 +60,22 @@ void merge(int arr[], int l, int m, int r) {
   }
 }
 
-uint64_t mergeSort(int arr[], int l, int r, int *yieldNum, uint64_t *quant,
-                   uint64_t start) {
+uint64_t mergeSort(int arr[], int l, int r, int *yieldNum, uint64_t quant,
+                   uint64_t *startTime) {
   if (l < r) {
     int m = l + (r - l) / 2;
 
-    uint64_t as1 = mergeSort(arr, l, m, yieldNum, quant, start);
+    uint64_t as1 = mergeSort(arr, l, m, yieldNum, quant, startTime);
 
     *yieldNum += 1;
     uint64_t ts1 = getTime();
-    if (ts1 - start >= *quant) coro_yield();
+
+    if (ts1 - *startTime >= quant) coro_yield();
+    *startTime = getTime();
+
     uint64_t ts2 = getTime();
 
-    uint64_t as2 = mergeSort(arr, m + 1, r, yieldNum, quant, start);
+    uint64_t as2 = mergeSort(arr, m + 1, r, yieldNum, quant, startTime);
 
     merge(arr, l, m, r);
     return ts2 - ts1 + as1 + as2;
@@ -113,6 +116,7 @@ int countFileSize(char *fileName) {
 
 static int coroutine_func_f(void *context) {
   uint64_t ts1 = getTime();
+  uint64_t startTime = getTime();
   int yieldNum = 0;
 
   struct func_arg *fa = (struct func_arg *)context;
@@ -123,7 +127,7 @@ static int coroutine_func_f(void *context) {
   }
 
   uint64_t lostTime = mergeSort(fa->arrToSort, 0, fa->arrSize - 1, &yieldNum,
-                                &fa->timeQuant, ts1);
+                                fa->timeQuant, &startTime);
 
   uint64_t totalTime = getTime() - ts1 - lostTime;
 
