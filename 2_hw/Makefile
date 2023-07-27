@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wextra -Werror -Wall -Wno-gnu-folding-constant
-TARGET = orsh
+TARGET = a.out
 
 PREF_SRC = ./src/
 PREF_OBJ = ./obj/

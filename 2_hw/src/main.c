@@ -85,10 +85,21 @@ void commandParser(struct cmd *cmd, char *comm) {
     // printf("token: [%s]\n", token);
 
     /* Remove \ signs for token. */
+    // if (*token == '\"') {
+    //   for (int i = 0; i < strlen(token); i++) {
+    //     char *s = token + i;  // s - start
+    //     // if ((*s == '\\') && ((*(s - 1) == '\\') || (*(s - 1) == '\"'))) {
+    //     if ((*s == '\\') && (*(s + 1) == '\\')) {
+    //       memmove(s, s + 1, strlen(token) - (s - token + 1));
+    //       s[strlen(s) - 1] = '\0';
+    //     }
+    //   }
+    // } else if (*token != '\'') {
     if (*token != '\'') {
       for (int i = 0; i < strlen(token); i++) {
         char *s = token + i;  // s - start
-        if ((*s == '\\') && ((*(s - 1) == '\\') || (*(s - 1) == '\"'))) {
+        // if ((*s == '\\') && ((*(s - 1) == '\\') || (*(s - 1) == '\"'))) {
+        if (*s == '\\') {
           memmove(s, s + 1, strlen(token) - (s - token + 1));
           s[strlen(s) - 1] = '\0';
         }
@@ -200,17 +211,34 @@ void quotesStatus(char *str, int *singleQuotesClosed, int *doubleQuotesClosed) {
   }
 }
 
+void freeAll(char *buff, struct cmd_line *line, char **cmd) {
+  free(cmd);
+  free(buff);
+  for (int k = 0; k < line->count; k++) {
+    free(line->cmds[k]->name);
+    for (int m = 0; m < line->cmds[k]->argc; m++) {
+      free(line->cmds[k]->argv[m]);
+    }
+    free(line->cmds[k]->argv);
+    free(line->cmds[k]);
+  }
+  free(line->cmds);
+}
+
 void execute(char *buff) {
   /* Parse buff by | pipe sign .*/
   struct cmd_line line = parser(buff);
   int **fd;
   int *child_pids;
+
   if (line.count > 1) {
     fd = malloc(line.count * sizeof(int *));
     for (int i = 0; i < line.count; i++) {
-      fd[i] = malloc(2 * sizeof(int));
+      fd[i] = calloc(2, sizeof(int));
       pipe(fd[i]);
     }
+
+    child_pids = calloc(line.count, sizeof(int));  // free in every if
   }
 
   for (int n = 0; n < line.count; n++) {
@@ -223,22 +251,8 @@ void execute(char *buff) {
     // printf("{%s}\n", cmd[0]);
     char *secondLast = line.cmds[n]->argv[line.cmds[n]->argc - 2];  // ???
 
-    if (line.count > 1) {
-      child_pids = calloc(line.count, sizeof(int));  // free in every if
-    }
-
     if (line.cmds[n]->name == NULL) {
-      free(cmd);
-      free(buff);
-      for (int k = 0; k < line.count; k++) {
-        free(line.cmds[k]->name);
-        for (int m = 0; m < line.cmds[k]->argc; m++) {
-          free(line.cmds[k]->argv[m]);
-        }
-        free(line.cmds[k]->argv);
-        free(line.cmds[k]);
-      }
-      free(line.cmds);
+      freeAll(buff, &line, cmd);
       exit(0);
     }  // means comment
 
@@ -246,19 +260,9 @@ void execute(char *buff) {
       cd_command(&line);
       free(cmd);
     } else if ((!strcmp(line.cmds[n]->name, "exit")) && (line.count == 1)) {
-      free(cmd);
-      free(buff);
-      for (int k = 0; k < line.count; k++) {
-        free(line.cmds[k]->name);
-        for (int m = 0; m < line.cmds[k]->argc; m++) {
-          free(line.cmds[k]->argv[m]);
-        }
-        free(line.cmds[k]->argv);
-        free(line.cmds[k]);
-      }
-      free(line.cmds);
+      freeAll(buff, &line, cmd);
       exit(0);
-    } else if ((line.cmds[n]->argc >= 2) &&
+    } else if ((line.count == 1) && (line.cmds[n]->argc >= 2) &&
                (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
       pid_t child_pid = fork();
       if (child_pid == 0) {
@@ -279,38 +283,136 @@ void execute(char *buff) {
       free(cmd);
     } else {
       if (line.count > 1) {
-        pid_t child_pid = fork();
-        if (child_pid == 0) {
-          if (n == 0) {
-            dup2(fd[n][1], STDOUT_FILENO);
-            close(fd[n][0]);
-            close(fd[n][1]);
-          } else if (n == line.count - 1) {
+        if ((line.cmds[n]->argc >= 2) &&
+            (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
+          pid_t child_pid = fork();
+          if (child_pid == 0) {
+            char *file_name = line.cmds[n]->argv[line.cmds[n]->argc - 1];
+            int file;
+
+            if (!strcmp(secondLast, ">"))
+              file = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+            else
+              file = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0777);
+
+            dup2(file, STDOUT_FILENO);
+            close(file);
+            cmd[line.cmds[n]->argc] = (char *)0;
+            cmd[line.cmds[n]->argc - 1] = (char *)0;
+
             dup2(fd[n - 1][0], STDIN_FILENO);
             close(fd[n - 1][0]);
             close(fd[n - 1][1]);
-          } else {
-            dup2(fd[n - 1][0], STDIN_FILENO);
-            dup2(fd[n][1], STDOUT_FILENO);
-            close(fd[n][0]);
-            close(fd[n][1]);
+
+            int status_code = execvp(line.cmds[n]->name, cmd);
+            if (status_code == -1) {
+              printf("Process did not terminate correctly\n");
+              freeAll(buff, &line, cmd);
+              exit(1);
+            }
+          }
+          child_pids[n] = child_pid;
+
+          if (n > 0) {
             close(fd[n - 1][0]);
             close(fd[n - 1][1]);
           }
-          execvp(line.cmds[n]->name, cmd);
-        }
+          // free(cmd);
+        } else {
+          pid_t child_pid = fork();
+          if (child_pid == 0) {
+            if ((line.cmds[n]->argc >= 2) &&
+                (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
+              pid_t child_pid = fork();
+              if (child_pid == 0) {
+                char *file_name = line.cmds[n]->argv[line.cmds[n]->argc - 1];
+                int file;
 
-        child_pids[n] = child_pid;
+                if (!strcmp(secondLast, ">"))
+                  file = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+                else
+                  file = open(file_name, O_WRONLY | O_CREAT | O_APPEND, 0777);
 
-        if (n > 0) {
-          close(fd[n - 1][0]);
-          close(fd[n - 1][1]);
+                dup2(file, STDOUT_FILENO);
+                close(file);
+                cmd[line.cmds[n]->argc] = (char *)0;
+                cmd[line.cmds[n]->argc - 1] = (char *)0;
+
+                dup2(fd[n - 1][0], STDIN_FILENO);
+                close(fd[n - 1][0]);
+                close(fd[n - 1][1]);
+
+                int status_code = execvp(line.cmds[n]->name, cmd);
+                if (status_code == -1) {
+                  printf("Process did not terminate correctly\n");
+                  freeAll(buff, &line, cmd);
+                  exit(1);
+                }
+              }
+              child_pids[n] = child_pid;
+
+              if (n > 0) {
+                close(fd[n - 1][0]);
+                close(fd[n - 1][1]);
+              }
+            }
+
+            if (n == 0) {
+              dup2(fd[n][1], STDOUT_FILENO);
+              close(fd[n][0]);
+              close(fd[n][1]);
+            } else if (n == line.count - 1) {
+              dup2(fd[n - 1][0], STDIN_FILENO);
+              close(fd[n - 1][0]);
+              close(fd[n - 1][1]);
+            } else {
+              dup2(fd[n - 1][0], STDIN_FILENO);
+              close(fd[n - 1][0]);
+              close(fd[n - 1][1]);
+
+              dup2(fd[n][1], STDOUT_FILENO);
+              close(fd[n][0]);
+              close(fd[n][1]);
+            }
+
+            int status_code = execvp(line.cmds[n]->name, cmd);
+            if (status_code == -1) {
+              printf("Process did not terminate correctly\n");
+              freeAll(buff, &line, cmd);
+              for (int i = 0; i < line.count; i++) {
+                free(fd[i]);
+              }
+              free(fd);
+              free(child_pids);
+              exit(1);
+            }
+          }
+
+          child_pids[n] = child_pid;
+
+          if (n >= 1) {
+            close(fd[n - 1][0]);
+            close(fd[n - 1][1]);
+          }
         }
+        // if (n > 1) {
+        //   close(fd[n - 1][0]);
+        //   close(fd[n - 1][1]);
+        //   close(fd[n][0]);
+        //   close(fd[n][1]);
+        // }
 
         // waitpid(child_pid, NULL, 0);
       } else {
         pid_t child_pid = fork();
-        if (child_pid == 0) execvp(line.cmds[n]->name, cmd);
+        if (child_pid == 0) {
+          int status_code = execvp(line.cmds[n]->name, cmd);
+          if (status_code == -1) {
+            printf("Process did not terminate correctly\n");
+            freeAll(buff, &line, cmd);
+            exit(1);
+          }
+        }
         waitpid(child_pid, NULL, 0);
       }
       free(cmd);
@@ -414,6 +516,11 @@ int main(void) {
     if ((*buff == '\n') || (!*buff)) continue;
     string_trim_inplace(buff);
     delete_comments(buff);
+
+    if (!*buff) {
+      free(buff);
+      continue;
+    }  // defense against comments like: #kqjewlkq
 
     // printf("buff: [%s]\n", buff);
 
