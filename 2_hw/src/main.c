@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,7 +100,7 @@ void commandParser(struct cmd *cmd, char *comm) {
       for (int i = 0; i < strlen(token); i++) {
         char *s = token + i;  // s - start
         // if ((*s == '\\') && ((*(s - 1) == '\\') || (*(s - 1) == '\"'))) {
-        if (*s == '\\') {
+        if ((*s == '\\') && (*(s + 1) != 'n')) {
           memmove(s, s + 1, strlen(token) - (s - token + 1));
           s[strlen(s) - 1] = '\0';
         }
@@ -225,7 +226,7 @@ void freeAll(char *buff, struct cmd_line *line, char **cmd) {
   free(line->cmds);
 }
 
-void execute(char *buff) {
+void execute(char *buff, int *code) {
   /* Parse buff by | pipe sign .*/
   struct cmd_line line = parser(buff);
   int **fd;
@@ -260,8 +261,10 @@ void execute(char *buff) {
       cd_command(&line);
       free(cmd);
     } else if ((!strcmp(line.cmds[n]->name, "exit")) && (line.count == 1)) {
+      int exitCode = 0;
+      if (line.cmds[n]->argc == 1) exitCode = atoi(cmd[1]);
       freeAll(buff, &line, cmd);
-      exit(0);
+      exit(exitCode);
     } else if ((line.count == 1) && (line.cmds[n]->argc >= 2) &&
                (!strcmp(secondLast, ">") || !strcmp(secondLast, ">>"))) {
       pid_t child_pid = fork();
@@ -306,7 +309,7 @@ void execute(char *buff) {
 
             int status_code = execvp(line.cmds[n]->name, cmd);
             if (status_code == -1) {
-              printf("Process did not terminate correctly\n");
+              // printf("Process did not terminate correctly\n");
               freeAll(buff, &line, cmd);
               exit(1);
             }
@@ -319,6 +322,7 @@ void execute(char *buff) {
           }
           // free(cmd);
         } else {
+          int exitCode;
           pid_t child_pid = fork();
           if (child_pid == 0) {
             if ((line.cmds[n]->argc >= 2) &&
@@ -344,7 +348,7 @@ void execute(char *buff) {
 
                 int status_code = execvp(line.cmds[n]->name, cmd);
                 if (status_code == -1) {
-                  printf("Process did not terminate correctly\n");
+                  // printf("Process did not terminate correctly\n");
                   freeAll(buff, &line, cmd);
                   exit(1);
                 }
@@ -374,16 +378,40 @@ void execute(char *buff) {
               close(fd[n][0]);
               close(fd[n][1]);
             }
-
-            int status_code = execvp(line.cmds[n]->name, cmd);
-            if (status_code == -1) {
-              printf("Process did not terminate correctly\n");
+            // //////////////////////////////
+            int status_code = 0;
+            if (!strcmp(line.cmds[n]->name, "exit")) {
+              int exitCode = 0;
+              if (line.cmds[n]->argc == 1) exitCode = atoi(cmd[1]);
+              // printf("%d", exitCode);
+              *code = exitCode;
               freeAll(buff, &line, cmd);
               for (int i = 0; i < line.count; i++) {
                 free(fd[i]);
               }
               free(fd);
               free(child_pids);
+              exit(exitCode);
+            } else {
+              status_code = execvp(line.cmds[n]->name, cmd);
+            }
+
+            /////////////////////////////////
+            if (status_code == -1) {
+              int exitCode = 0;
+              if (!strcmp(line.cmds[n]->name, "exit")) exitCode = atoi(cmd[1]);
+              *code = exitCode;
+              printf("Process did not terminate correctly\n");
+              printf("%s", strerror(errno));
+              // printf("%d", n);
+              freeAll(buff, &line, cmd);
+              for (int i = 0; i < line.count; i++) {
+                free(fd[i]);
+              }
+              free(fd);
+              free(child_pids);
+              // exit(1);
+
               exit(1);
             }
           }
@@ -395,20 +423,12 @@ void execute(char *buff) {
             close(fd[n - 1][1]);
           }
         }
-        // if (n > 1) {
-        //   close(fd[n - 1][0]);
-        //   close(fd[n - 1][1]);
-        //   close(fd[n][0]);
-        //   close(fd[n][1]);
-        // }
-
-        // waitpid(child_pid, NULL, 0);
       } else {
         pid_t child_pid = fork();
         if (child_pid == 0) {
           int status_code = execvp(line.cmds[n]->name, cmd);
           if (status_code == -1) {
-            printf("Process did not terminate correctly\n");
+            // printf("Process did not terminate correctly\n");
             freeAll(buff, &line, cmd);
             exit(1);
           }
@@ -444,8 +464,9 @@ void execute(char *buff) {
 }
 
 int main(void) {
+  int code = 0;
   while (1) {
-    greeting();
+    // greeting();
 
     char **buffs = malloc(sizeof(char *) * 1);
     int i = 0;
@@ -464,9 +485,10 @@ int main(void) {
       buffs[i] = NULL;
       int x = getline(buffs + i, &len, stdin);
       if (x == -1) {
+        // printf("[%d]", code);
         for (int k = 0; k < i + 1; k++) free(buffs[k]);
         free(buffs);
-        exit(0);
+        exit(code);
       }
       quotesStatus(buffs[i], &singleQuotesClosed, &doubleQuotesClosed);
       buffs = realloc(buffs, sizeof(char *) * (i + 2));
@@ -525,7 +547,7 @@ int main(void) {
     // printf("buff: [%s]\n", buff);
 
     /* Execute the whole line, pipe by pipe. */
-    execute(buff);
+    execute(buff, &code);
   }
   // return 0;
 }

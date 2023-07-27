@@ -14,7 +14,10 @@ void string_trim_beginning(char *original) {
 
   if (*s) {
     char *p = s;
-    while ((*p != '\n') && (*p)) p++;
+    while (*p) {
+      if ((*p == '\\') && (*(p + 1) == '\n')) break;
+      p++;
+    }
     p--;
     p[1] = '\0';
     len = (size_t)(p - s + 1);
