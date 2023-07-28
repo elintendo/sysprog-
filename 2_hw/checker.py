@@ -113,6 +113,7 @@ except subprocess.TimeoutExpired:
 	print('Too long no output. Probably you forgot to process EOF')
 	finish(-1)
 if p.returncode != 0:
+	print(output)
 	print('Expected zero exit code')
 	finish(-1)
 
@@ -171,9 +172,13 @@ for test in tests:
 tests = [
 (["ls /"], 0),
 (["ls / | exit 123"], 123),
-(["ls /404"], 1),
 (["ls /404", "echo test"], 0),
 ]
+cmd = "ls /404"
+code = os.WEXITSTATUS(os.system(cmd + ' 2>/dev/null'))
+assert(code != 0)
+tests.append(([cmd], code))
+
 for test in tests:
 	p = open_new_shell()
 	try:

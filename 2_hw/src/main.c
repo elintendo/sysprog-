@@ -13,6 +13,9 @@
 #include "greeting.h"
 #include "string_trim.h"
 
+#define BUFFERSIZE 10
+#define MAXREAD 4096
+
 struct cmd {
   char *name;
   int argc;
@@ -435,7 +438,9 @@ void execute(char *buff, int *code) {
             exit(1);
           }
         }
-        waitpid(child_pid, NULL, 0);
+        int returnStatus;
+        waitpid(child_pid, &returnStatus, 0);
+        *code = WEXITSTATUS(returnStatus);
       }
       free(cmd);
     }
@@ -472,7 +477,7 @@ int main(void) {
   while (1) {
     // greeting();
 
-    char **buffs = malloc(sizeof(char *) * 1);
+    char **buffs = calloc(1, sizeof(char *));
     int i = 0;
 
     /*
@@ -484,16 +489,50 @@ int main(void) {
     The input is read until no |, \ in the end. (\\ and \| are ok)
     AND no open quotation marks.
     */
+    // int size = 0;
     do {
       unsigned long int len;
       buffs[i] = NULL;
-      int x = getline(buffs + i, &len, stdin);
-      if (x == -1) {
-        // printf("[%d]", code);
+      int x = getline(&buffs[i], &len, stdin);
+      if (x == -1) {  // eof detected
         for (int k = 0; k < i + 1; k++) free(buffs[k]);
         free(buffs);
         exit(code);
       }
+
+      // if (strlen(buffs[i]) == MAXREAD) {
+      //   unsigned long int len;
+      //   int t = 0;
+      //   char *left = NULL;
+      //   getline(&left, &len, stdin);
+      //   printf("[%d]", strlen(left));
+      //   buffs[i] = realloc(buffs[i], MAXREAD + sizeof(left));
+      //   for (int k = MAXREAD; k < MAXREAD + sizeof(left); k++)
+      //     buffs[i][k] = '\0';
+      //   strcat(buffs[i], left);
+      //   free(left);
+      // }
+      // char *buf;
+      // char *final = NULL;
+      // int t = 1;
+      // do {
+      //   unsigned long int len;
+      //   buf = NULL;
+      //   int x = getline(&buf, &len, stdin);
+      //   final = realloc(final, sizeof(buf));
+      //   for (int k = (t - 1) * 4096; k < t * sizeof(buf); k++) final[k] =
+      //   '\0'; strcat(final, buf); if (x == -1) {  // eof detected
+      //     for (int k = 0; k < i + 1; k++) free(buffs[k]);
+      //     free(buffs);
+      //     free(final);
+      //     free(buf);
+      //     exit(code);
+      //   }
+      // } while (sizeof(buf) == 4096);
+
+      // buffs[i] = final;
+      // free(buf);
+
       quotesStatus(buffs[i], &singleQuotesClosed, &doubleQuotesClosed);
       buffs = realloc(buffs, sizeof(char *) * (i + 2));
       i++;
@@ -502,7 +541,6 @@ int main(void) {
              ((buffs[i - 1][strlen(buffs[i - 1]) - 2] == '|') &&
               (buffs[i - 1][strlen(buffs[i - 1]) - 3] != '\\')) ||
              (!singleQuotesClosed || !doubleQuotesClosed));
-
     /* Concatenate all pieces in a single buff. */
     char *buff;
     if (i == 1) {
@@ -553,5 +591,4 @@ int main(void) {
     /* Execute the whole line, pipe by pipe. */
     execute(buff, &code);
   }
-  // return 0;
 }
