@@ -479,9 +479,6 @@ int main(void) {
 
     char **buffs = calloc(1, sizeof(char *));
     int i = 0;
-
-    /*
-     */
     int singleQuotesClosed = 1;
     int doubleQuotesClosed = 1;
 
@@ -489,15 +486,36 @@ int main(void) {
     The input is read until no |, \ in the end. (\\ and \| are ok)
     AND no open quotation marks.
     */
-    // int size = 0;
     do {
-      unsigned long int len;
+      // unsigned long int len;
+      // buffs[i] = NULL;
+      // int x = getline(&buffs[i], &len, stdin);
+      // if (x == -1) {  // eof detected
+      //   for (int k = 0; k < i + 1; k++) free(buffs[k]);
+      //   free(buffs);
+      //   exit(code);
+      // }
+
+      int length = 0;
       buffs[i] = NULL;
-      int x = getline(&buffs[i], &len, stdin);
-      if (x == -1) {  // eof detected
-        for (int k = 0; k < i + 1; k++) free(buffs[k]);
-        free(buffs);
-        exit(code);
+      while (1) {
+        int ch = getchar();
+        // if (ch == '\n') break;
+        if (ch == EOF) {
+          for (int k = 0; k < i + 1; k++) free(buffs[k]);
+          free(buffs);
+          exit(code);
+        }
+
+        buffs[i] = realloc(buffs[i], length + 2);
+        if (buffs[i] == NULL) {
+          perror("Failed when allocated memory.");
+          exit(127);
+        }
+        buffs[i][length] = (char)ch;
+        buffs[i][length + 1] = '\0';
+        ++length;
+        if (buffs[i][length - 1] == '\n') break;
       }
 
       // if (strlen(buffs[i]) == MAXREAD) {
