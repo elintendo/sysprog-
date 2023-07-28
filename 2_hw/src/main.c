@@ -595,7 +595,10 @@ int main(void) {
     free(buffs);
 
     /* Additional makeup for buffer. */
-    if ((*buff == '\n') || (!*buff)) continue;
+    if ((*buff == '\n') || (!*buff)) {
+      free(buff);
+      continue;
+    }
     string_trim_inplace(buff);
     delete_comments(buff);
 
