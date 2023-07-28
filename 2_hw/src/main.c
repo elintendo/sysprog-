@@ -384,7 +384,6 @@ void execute(char *buff, int *code) {
               int exitCode = 0;
               if (line.cmds[n]->argc == 1) exitCode = atoi(cmd[1]);
               // printf("%d", exitCode);
-              *code = exitCode;
               freeAll(buff, &line, cmd);
               for (int i = 0; i < line.count; i++) {
                 free(fd[i]);
@@ -415,6 +414,9 @@ void execute(char *buff, int *code) {
               exit(1);
             }
           }
+          // int returnStatus;
+          // waitpid(child_pid, &returnStatus, 0);
+          // *code = WEXITSTATUS(returnStatus);
 
           child_pids[n] = child_pid;
 
@@ -441,7 +443,9 @@ void execute(char *buff, int *code) {
 
   if (line.count > 1) {
     for (int k = 0; k < line.count; k++) {
-      waitpid(child_pids[k], NULL, 0);
+      int returnStatus;
+      waitpid(child_pids[k], &returnStatus, 0);
+      *code = WEXITSTATUS(returnStatus);
     }
 
     for (int i = 0; i < line.count; i++) {
